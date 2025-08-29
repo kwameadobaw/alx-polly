@@ -10,9 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Plus, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/auth-context'
+import { createClient } from '@/lib/supabase/client'
 
 export function CreatePollForm() {
   const router = useRouter()
+  const { user } = useAuth()
+  const supabase = createClient()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [formData, setFormData] = useState({
@@ -52,7 +56,12 @@ export function CreatePollForm() {
     setIsLoading(true)
     setError('')
 
-    // Validate form
+    if (!user) {
+      setError('You must be logged in to create a poll.')
+      setIsLoading(false)
+      return
+    }
+
     if (!formData.title.trim() || !formData.description.trim() || !formData.category) {
       setError('Please fill in all required fields')
       setIsLoading(false)
@@ -66,12 +75,42 @@ export function CreatePollForm() {
       return
     }
 
-    // TODO: Implement actual poll creation logic
-    setTimeout(() => {
+    try {
+      // Insert the poll into the 'polls' table
+      const { data: pollData, error: pollError } = await supabase
+        .from('polls')
+        .insert({
+          title: formData.title,
+          description: formData.description,
+          category: formData.category,
+          user_id: user.id,
+        })
+        .select('id')
+        .single()
+
+      if (pollError) throw pollError
+
+      const pollId = pollData.id
+
+      // Insert the options into the 'poll_options' table
+      const optionsToInsert = validOptions.map(optionText => ({
+        poll_id: pollId,
+        option_text: optionText,
+      }))
+
+      const { error: optionsError } = await supabase
+        .from('poll_options')
+        .insert(optionsToInsert)
+
+      if (optionsError) throw optionsError
+
+      // Redirect to the new poll page
+      router.push(`/polls/${pollId}`)
+    } catch (error: any) {
+      setError(error.message || 'An unexpected error occurred.')
+    } finally {
       setIsLoading(false)
-      // Simulate success and redirect
-      router.push('/polls')
-    }, 2000)
+    }
   }
 
   return (
